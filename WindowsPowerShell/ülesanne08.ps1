@@ -1,4 +1,5 @@
-﻿function Ringi-Pindala {
+
+ function Ringi-Pindala {
     param (
         [float]$Raadius
     )
@@ -11,7 +12,6 @@
     $Pindala = [math]::PI * $Raadius * $Raadius
     return $Pindala
 }
-
 
 $raadius = Read-Host "Palun sisestage ringi raadius"
 
@@ -32,7 +32,6 @@ function Puhasta-Taisnimi {
                                   -replace 'õ', 'o' `
                                   -replace 'ü', 'y'
 
-    
     $puhastatudNimi = $puhastatudNimi -replace '[^\p{L} ]', '' 
     $puhastatudNimi = $puhastatudNimi -replace '\s+', ' '     
     $puhastatudNimi = $puhastatudNimi.Trim()                  
@@ -45,7 +44,6 @@ function Puhasta-Taisnimi {
 
     return $puhastatudNimi
 }
-
 
 $nimeSisend = Read-Host " sisestage oma täisnimi)"
 
