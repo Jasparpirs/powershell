@@ -1,94 +1,76 @@
-﻿# Määra CSV faili asukoht
-$csvPath = "AD_Kasutajad.csv"
-
-# Määra juur-OU, mille alla uued OU-d luuakse
-$kasutajadOU = "OU=KASUTAJAD,DC=pirs,DC=local"
-
-# Määra vaikimisi parool
-$defaultPassword = "Passw0rd"
+﻿$csvFail = "F:\Skriptid\powershell\WindowsPowerShell\AD_Kasutajad.csv"
+$domeen = "pirs.local"  
+$vaikeParool = "Passw0rd!"
+$juurOU = "OU=KASUTAJAD,DC=pirs,DC=local" 
 
 # Impordi CSV fail
 try {
-    $users = Import-Csv -Path "F:\Skriptid\powershell\WindowsPowerShell\AD_Kasutajad.csv"
+    $kasutajad = Import-Csv -Path $csvFail 
 }
 catch {
-    Write-Error "CSV faili importimisel tekkis viga: $($_.Exception.Message)"
+    Write-Error "Viga CSV faili importimisel: $($_.Exception.Message)"
     exit
 }
 
-# Kontrolli kas 'Active Directory' moodul on saadaval
-if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
-    Write-Warning "Active Directory moodul pole saadaval. Proovin importida."
+
+function Loo-OU {
+    param (
+        [string]$OUName,
+        [string]$ParentOU
+    )
     try {
-        Import-Module ActiveDirectory
+        New-ADOrganizationalUnit -Name $OUName -Path $ParentOU -ProtectedFromAccidentalDeletion $false
+        Write-Host "Loodud OU: $OUName asukohas $ParentOU" -ForegroundColor Green
     }
     catch {
-        Write-Error "Active Directory mooduli importimisel tekkis viga: $($_.Exception.Message)"
-        exit
+        Write-Warning "Viga OU loomisel  $($_.Exception.Message)"
     }
 }
 
-# Käi läbi iga kasutaja CSV failis
-foreach ($user in $users) {
-    # Võta kasutaja andmed
-    $eesnimi = $user.Eesnimi
-    $perenimi = $user.Perenimi
-    $ouNimi = $user.OU
-    $kasutajanimi = "$eesnimi.$perenimi"
-    $email = "$($eesnimi.Substring(0,1))$perenimi@perenimi.local"
-    $userOU = "OU=$ouNimi,$kasutajadOU"
 
-    Write-Host "Processing user: $kasutajanimi"
+foreach ($kasutaja in $kasutajad) {
+    
+    $eesnimi = $kasutaja.eesnimi
+    $perenimi = $kasutaja.perenimi
+    $osakond = $kasutaja.osakond
 
-    # Kontrolli kas OU on olemas
-    if (!(Get-ADOrganizationalUnit -Identity $userOU -ErrorAction SilentlyContinue)) {
-        Write-Host "OU '$ouNimi' ei eksisteeri. Loome uue OU."
-        try {
-            New-ADOrganizationalUnit -Name $ouNimi -Path $kasutajadOU
-            Write-Host "OU '$ouNimi' loodud edukalt."
-        }
-        catch {
-            Write-Error "OU loomisel tekkis viga: $($_.Exception.Message)"
-            continue # Jätka järgmise kasutajaga
-        }
+   
+    if (-not $eesnimi -or -not $perenimi -or -not $osakond) {
+        Write-Warning "andmed puuduvad "
+        continue
+    }
+
+    $OUName = $osakond
+    $OUPath = "OU=$OUName,$juurOU"
+
+    
+    if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$OUName'" -SearchBase $juurOU)) {
+        Loo-OU -OUName $OUName -ParentOU $juurOU
     } else {
-        Write-Host "OU '$ouNimi' on juba olemas."
+        Write-Host "OU $OUName on juba olemas."
     }
 
-    # Kontrolli kas kasutaja on juba olemas
-    if (Get-ADUser -Identity $kasutajanimi -ErrorAction SilentlyContinue) {
-        Write-Warning "Kasutaja '$kasutajanimi' on juba olemas. Jätan vahele."
-        continue # Jätka järgmise kasutajaga
+    $kasutajanimi = "$eesnimi.$perenimi"
+    $email = "$($eesnimi.Substring(0,1))$perenimi@$domeen"
+
+    if (Get-ADUser -Filter "SamAccountName -eq '$kasutajanimi'") {
+        Write-Warning "Kasutaja $kasutajanimi on juba olemas. Jäetakse vahele."
+        continue
     }
 
-    # Loo kasutaja
-    Write-Host "Loome kasutaja '$kasutajanimi'."
+   
     try {
-        # Teisenda parool turvaliseks stringiks
-        $securePassword = ConvertTo-SecureString $defaultPassword -AsPlainText -Force
+        $parool = ConvertTo-SecureString $vaikeParool -AsPlainText -Force
+        New-ADUser -SamAccountName $kasutajanimi -UserPrincipalName $email -Name "$eesnimi $perenimi" -GivenName $eesnimi -Surname $perenimi -Path $OUPath -AccountPassword $parool -Enabled $true -ChangePasswordAtLogon $true
 
-        # Loo kasutaja AD-sse
-        $userParams = @{
-            SamAccountName   = $kasutajanimi
-            UserPrincipalName = $email
-            GivenName         = $eesnimi
-            Surname           = $perenimi
-            DisplayName       = "$eesnimi $perenimi"
-            Path              = $userOU
-            AccountPassword   = $securePassword
-            Enabled           = $true
-            ChangePasswordAtLogon = $true #Kasutaja peab parooli vahetama esimesel sisselogimisel
-        }
-        New-ADUser @userParams
-
-        #Seadista e-posti aadress
+        
         Set-ADUser -Identity $kasutajanimi -EmailAddress $email
 
-        Write-Host "Kasutaja '$kasutajanimi' loodud edukalt."
+        Write-Host "Kasutaja $kasutajanimi on loodud." -ForegroundColor Green
     }
     catch {
-        Write-Error "Kasutaja loomisel tekkis viga: $($_.Exception.Message)"
+        Write-Warning "Viga kasutaja $kasutajanimi loomisel: $($_.Exception.Message)"
     }
 }
 
-Write-Host "Skript lõpetatud."
+Write-Host "Skript on lõpetatud." -ForegroundColor Yellow
